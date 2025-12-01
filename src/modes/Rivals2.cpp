@@ -4,6 +4,7 @@
 #define ANALOG_STICK_NEUTRAL 128
 #define ANALOG_STICK_MAX 228
 
+//This is all mine for sure
 Rivals2::Rivals2() : ControllerMode() {}
 
 void Rivals2::UpdateDigitalOutputs(const InputState &inputs, OutputState &outputs) {
