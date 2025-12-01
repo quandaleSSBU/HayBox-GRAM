@@ -1,11 +1,8 @@
 #include "modes/Rivals2.hpp"
 
-#define ANALOG_STICK_MIN 0
+#define ANALOG_STICK_MIN 28
 #define ANALOG_STICK_NEUTRAL 128
-#define ANALOG_STICK_MAX 255
-
-bool input_persist; // for angled tilts
-int timer = 0; // for angled tilts
+#define ANALOG_STICK_MAX 228
 
 Rivals2::Rivals2() : ControllerMode() {}
 
@@ -14,43 +11,34 @@ void Rivals2::UpdateDigitalOutputs(const InputState &inputs, OutputState &output
     outputs.b = inputs.rf1;
     outputs.x = inputs.rf2;
     outputs.y = inputs.rf6;
-    outputs.buttonR = inputs.rf3;
-    if (inputs.nunchuk_connected) {
-        // Lightshield with C button.
-        if (inputs.nunchuk_c) {
-            outputs.triggerLAnalog = 49;
-        }
-        outputs.triggerLDigital = inputs.nunchuk_z;
-    } else {
-        outputs.triggerLDigital = inputs.lf4;
-    }
+    //outputs.buttonL = inputs.rf7; //left bumper
+    outputs.buttonR = inputs.rf3 || inputs.rf8; //Z
+    outputs.triggerLDigital = inputs.lf4;
     outputs.triggerRDigital = inputs.rf5;
     outputs.start = inputs.mb1;
-    outputs.leftStickClick = inputs.rf7;
-    outputs.buttonL = inputs.rf8; // changed from rightStickClick to buttonL
-    // only because buttonL is a default mapping in Rivals 2 (doesn't really matter)
+
+    // Turn on D-Pad layer by holding Mod X + Mod Y or Nunchuk C button.
+    if ((inputs.lt1 && inputs.lt2) || inputs.nunchuk_c || inputs.lf5) {
+        outputs.dpadUp = inputs.rt4;
+        outputs.dpadDown = inputs.rt2;
+        outputs.dpadLeft = inputs.rt3;
+        outputs.dpadRight = inputs.rt5;
+    }
 
     // Hidden Buttons for remapp.ing options
+    outputs.leftStickClick = inputs.lf6;
     outputs.rightStickClick = inputs.lf7;
     outputs.capture = inputs.lf8;
     outputs.dpadUp = inputs.lf9;
     outputs.dpadDown = inputs.lf10;
     outputs.dpadLeft = inputs.lf11;
     outputs.dpadRight = inputs.lf12;
-    outputs.select = inputs.mb2;
+    //outputs.select = inputs.mb2; //Select Input
     outputs.home = inputs.mb3;
-
-    // Activate D-Pad layer by holding Mod X + Mod Y.
-    if (inputs.lt1 && inputs.lt2 || inputs.lf5) {
-        outputs.dpadUp = inputs.rt4;
-        outputs.dpadDown = inputs.rt2;
-        outputs.dpadLeft = inputs.rt3;
-        outputs.dpadRight = inputs.rt5;
-    }
 }
 
 void Rivals2::UpdateAnalogOutputs(const InputState &inputs, OutputState &outputs) {
-    // Coordinate calculations to make modifier handling simpler.
+   // Coordinate calculations to make modifier handling simpler.
     UpdateDirections(
         inputs.lf3, // Left
         inputs.lf1, // Right
@@ -66,206 +54,169 @@ void Rivals2::UpdateAnalogOutputs(const InputState &inputs, OutputState &outputs
         outputs
     );
 
-    bool shield_button_pressed = inputs.lf4 || inputs.rf5; // if L or R are pressed
+    bool shield_button_pressed = inputs.lf4 || inputs.rf5;
 
-    if (directions.diagonal &&
-        !shield_button_pressed) { // added this conditional to give joystick accurate diagonals
-                                  // rather than (+/- 1.2, 1.2) should be (0.87~, 0.87~)
-        outputs.leftStickX =
-            128 + (directions.x * 92); // 92 (0.78 in-game), reduced below 0.8 to allow crouch
-                                       // tilts/crouch turn-around tilts
-        outputs.leftStickY = 128 + (directions.y * 96); // Y value 0.83. >0.8 allows fast fall
-    }
-
-    if (directions.diagonal && shield_button_pressed) {
-        outputs.leftStickX =
-            128 + (directions.x * 92
-                  ); // (0.77~, 0.77~) to prevent spot dodging when pressing diagonal on the ground
-        outputs.leftStickY = 128 + (directions.y * 92);
-    }
-
-    // For MX Angled Tilts when input_persist is true
-    //(x, y), (69, 53), (~0.506, ~0.31) [coords, code_values, in-game values]
-    if (input_persist) { // input_persist becomes true if ModX + diagonal + A
-        timer++;
-        outputs.leftStickX = 128 + (directions.x * 69);
-        outputs.leftStickY = 128 + (directions.y * 53);
-    }
-
-    if (timer == 150) { // 150 has a 90% success rate on pico
-        timer = 0;
-        input_persist = false;
-    }
-
-    if (inputs.lt1) { // if ModX is held
+    if (inputs.lt1) {
+        // MX + Horizontal = 6625 = 53
         if (directions.horizontal) {
-            outputs.leftStickX =
-                128 + (directions.x * 76
-                      ); // 76 gives 0.58~ in-game for a medium speed walk. will also do tilts
-        }
-
-        if (directions.vertical) {
-            outputs.leftStickY =
-                128 + (directions.y * 53); // 48 (0.31~ in-game), 0.3 allows tilts and shield drop
-        }
-
-        if (directions.diagonal &&
-            shield_button_pressed) { // for max-length diagonal wavedash while holding ModX
-            outputs.leftStickX = 128 + (directions.x * 120);
-            outputs.leftStickY = 128 + (directions.y * 42);
-        }
-
-        if (directions.diagonal && !shield_button_pressed) {
-            /* 100% Magnitude UpB when holding B */
-            if (inputs.rf1 && !inputs.rf3) {
-                // (x, y), (123, 51), (1.14~, 0.29~) [coords, code_values, in-game values]
-                outputs.leftStickX = 128 + (directions.x * 123);
-                outputs.leftStickY = 128 + (directions.y * 51);
-                // (x, y), (120, 61), (1.1~, 0.41~) [coords, code_values, in-game values]
-                if (inputs.rt2) { // C-Down
-                    outputs.leftStickX = 128 + (directions.x * 120);
-                    outputs.leftStickY = 128 + (directions.y * 61);
-                }
-                // (x, y), (115, 69), (1.04~, 0.51~) [coords, code_values, in-game values]
-                if (inputs.rt3) { // C-Left
-                    outputs.leftStickX = 128 + (directions.x * 115);
-                    outputs.leftStickY = 128 + (directions.y * 69);
-                }
-                // (x, y), (110, 78), (0.98~, 0.61~) [coords, code_values, in-game values]
-                if (inputs.rt4) { // C-Up
-                    outputs.leftStickX = 128 + (directions.x * 110);
-                    outputs.leftStickY = 128 + (directions.y * 78);
-                }
-                // (x, y), (103, 87), (0.9~, 0.71~) [coords, code_values, in-game values]
-                if (inputs.rt5) { // C-Right
-                    outputs.leftStickX = 128 + (directions.x * 103);
-                    outputs.leftStickY = 128 + (directions.y * 87);
-                }
+            outputs.leftStickX = 128 + (directions.x * 53);
+            // Horizontal Shield tilt = 51
+            if (shield_button_pressed) {
+                outputs.leftStickX = 128 + (directions.x * 51);
             }
-            /* 60% Magnitude UpB when not holding B nor Z*/
-            if (!inputs.rf3 && !inputs.rf1 && !input_persist) {
-                // (x, y), (68, 42), (~0.49, ~0.188) [coords, code_values, in-game values]
-                outputs.leftStickX = 128 + (directions.x * 68);
-                outputs.leftStickY = 128 + (directions.y * 42);
-                // (x, y), (71, 47), (~0.52, ~0.24) [coords, code_values, in-game values]
-                if (inputs.rt2) { // C-Down
-                    outputs.leftStickX = 128 + (directions.x * 71);
-                    outputs.leftStickY = 128 + (directions.y * 47);
-                }
-                // (x, y), (71, 51), (~0.52, 0.29~) [coords, code_values, in-game values]
-                if (inputs.rt3) { // C-Left
-                    outputs.leftStickX = 128 + (directions.x * 71);
-                    outputs.leftStickY = 128 + (directions.y * 51);
-                }
-                // (x, y), (69, 55), (~0.51, ~0.34) [coords, code_values, in-game values]
-                if (inputs.rt4) { // C-Up
-                    outputs.leftStickX = 128 + (directions.x * 69);
+            // Horizontal Tilts = 36
+            if (inputs.rt1) {
+                outputs.leftStickX = 128 + (directions.x * 36);
+            }
+        }
+        // MX + Vertical = 44
+        if (directions.vertical) {
+            outputs.leftStickY = 128 + (directions.y * 44);
+            // Vertical Shield Tilt = 51
+            if (shield_button_pressed) {
+                outputs.leftStickY = 128 + (directions.y * 51);
+            }
+        }
+        if (directions.diagonal && shield_button_pressed) {
+            // MX + L, R, LS, and MS + q1/2/3/4 = 6375 3750 = 51 30
+            outputs.leftStickX = 128 + (directions.x * 51);
+            outputs.leftStickY = 128 + (directions.y * 30);
+        }
+
+        /* Up B angles */
+        if (directions.diagonal && !shield_button_pressed) {
+            // MX + q1/2/3/4 = 33.44 degrees | 53 35
+            outputs.leftStickX = 128 + (directions.x * 53);
+            outputs.leftStickY = 128 + (directions.y * 35);
+            // (39.05) = 53 43
+            if (inputs.rt2) {
+                outputs.leftStickX = 128 + (directions.x * 53);
+                outputs.leftStickY = 128 + (directions.y * 43);
+            }
+            // (36.35) = 53 39
+            if (inputs.rt3) {
+                outputs.leftStickX = 128 + (directions.x * 53);
+                outputs.leftStickY = 128 + (directions.y * 39);
+            }
+            // (30.32) = 56 41
+            if (inputs.rt4) {
+                outputs.leftStickX = 128 + (directions.x * 53);
+                outputs.leftStickY = 128 + (directions.y * 31);
+            }
+            // (27.85) = 49 42
+            if (inputs.rt5) {
+                outputs.leftStickX = 128 + (directions.x * 53);
+                outputs.leftStickY = 128 + (directions.y * 28);
+            }
+
+            /* Extended Up B Angles */
+            if (inputs.rf1) {
+                // (33.29) = 67 44
+                outputs.leftStickX = 128 + (directions.x * 67);
+                outputs.leftStickY = 128 + (directions.y * 44);
+                // (39.38) = 67 55
+                if (inputs.rt2) {
+                    outputs.leftStickX = 128 + (directions.x * 67);
                     outputs.leftStickY = 128 + (directions.y * 55);
                 }
-                // (x, y), (64, 60), (, ~0.38) [coords, code_values, in-game values]
-                if (inputs.rt5) { // C-Right
-                    outputs.leftStickX = 128 + (directions.x * 64);
-                    outputs.leftStickY = 128 + (directions.y * 60);
+                // (36.18) = 67 49
+                if (inputs.rt3) {
+                    outputs.leftStickX = 128 + (directions.x * 67);
+                    outputs.leftStickY = 128 + (directions.y * 49);
+                }
+                // (30.2) = 67 39
+                if (inputs.rt4) {
+                    outputs.leftStickX = 128 + (directions.x * 67);
+                    outputs.leftStickY = 128 + (directions.y * 39);
+                }
+                // (27.58) = 67 35
+                if (inputs.rt5) {
+                    outputs.leftStickX = 128 + (directions.x * 67);
+                    outputs.leftStickY = 128 + (directions.y * 35);
                 }
             }
-            /* Shortest UpB when holding Z*/
-            if (inputs.rf3) {
-                // (x, y), (53, 68), (~0.31, ~0.188) [coords, code_values, in-game values]
-                outputs.leftStickX = 128 + (directions.x * 53);
-                outputs.leftStickY = 128 + (directions.y * 42);
+
+            // Angled fsmash/ftilt with C-Stick + MX
+            if (directions.cx != 0) {
+                outputs.rightStickX = 128 + (directions.cx * 127);
+                outputs.rightStickY = 128 + (directions.y * 59);
             }
-            /*ModX Angled Tilts*/
+
+            // Angled Ftilts
             if (inputs.rt1) {
-                input_persist = true;
-                timer = 0;
-                outputs.leftStickX = 128 + (directions.x * 69);
-                outputs.leftStickY = 128 + (directions.y * 53);
+                outputs.leftStickX = 128 + (directions.x * 36);
+                outputs.leftStickY = 128 + (directions.y * 26);
             }
         }
     }
 
-    if (inputs.lt2) { // if ModY is held
+    if (inputs.lt2) {
+        // MY + Horizontal (even if shield is held) = 41
         if (directions.horizontal) {
-            outputs.leftStickX =
-                128 +
-                (directions.x * 53); // 53 equates to 0.318~ in-game. 0.3 is min to achieve a walk
-        }
-
-        if (directions.vertical) {
-            outputs.leftStickY =
-                128 + (directions.y * 90
-                      ); // 0.75~ in-game. will shield drop and tap jump; will not fast fall
-        }
-
-        if (directions.diagonal && !shield_button_pressed) {
-            /* 100% Magnitude UpB when holding B*/
-            if (inputs.rf1 && !inputs.rf3) {
-                // (x, y), (51, 123), (~0.29, ~1.14) [coords, code_values, in-game values]
-                outputs.leftStickX = 128 + (directions.x * 51);
-                outputs.leftStickY = 128 + (directions.y * 123);
-                // (x, y), (61, 120), (~0.41, ~1.1) [coords, code_values, in-game values]
-                if (inputs.rt2) { // C-Down
-                    outputs.leftStickX = 128 + (directions.x * 61);
-                    outputs.leftStickY = 128 + (directions.y * 120);
-                }
-                // (x, y), (69, 115), (~0.51, 1.04~) [coords, code_values, in-game values]
-                if (inputs.rt3) { // C-Left
-                    outputs.leftStickX = 128 + (directions.x * 69);
-                    outputs.leftStickY = 128 + (directions.y * 115);
-                }
-                // (x, y), (78, 110), (~0.61, 0.98~) [coords, code_values, in-game values]
-                if (inputs.rt4) { // C-Up
-                    outputs.leftStickX = 128 + (directions.x * 78);
-                    outputs.leftStickY = 128 + (directions.y * 110);
-                }
-                // (x, y), (87, 103), (~0.71, 0.9~) [coords, code_values, in-game values]
-                if (inputs.rt5) { // C-Right
-                    outputs.leftStickX = 128 + (directions.x * 87);
-                    outputs.leftStickY = 128 + (directions.y * 103);
-                }
-            }
-            /* 60% Magnitude UpB when not holding B nor Z*/
-            if (!inputs.rf3 && !inputs.rf1) {
-                // (x, y), (42, 68), (~0.188, ~0.49) [coords, code_values, in-game values]
-                outputs.leftStickX = 128 + (directions.x * 42);
-                outputs.leftStickY = 128 + (directions.y * 68);
-                // (x, y), (47, 71), (~0.24, ~0.52) [coords, code_values, in-game values]
-                if (inputs.rt2) { // C-Down
-                    outputs.leftStickX = 128 + (directions.x * 47);
-                    outputs.leftStickY = 128 + (directions.y * 71);
-                }
-                // (x, y), (51, 71), (~0.29, ~0.52) [coords, code_values, in-game values]
-                if (inputs.rt3) { // C-Left
-                    outputs.leftStickX = 128 + (directions.x * 51);
-                    outputs.leftStickY = 128 + (directions.y * 71);
-                }
-                // (x, y), (55, 69), (~0.34, ~0.51) [coords, code_values, in-game values]
-                if (inputs.rt4) { // C-Up
-                    outputs.leftStickX = 128 + (directions.x * 55);
-                    outputs.leftStickY = 128 + (directions.y * 69);
-                }
-                // (x, y), (60, 64), (~0.38, ~0.) [coords, code_values, in-game values]
-                if (inputs.rt5) { // C-Right
-                    outputs.leftStickX = 128 + (directions.x * 60);
-                    outputs.leftStickY = 128 + (directions.y * 64);
-                }
-            }
-            /* Shortest UpB when holding Z*/
-            if (inputs.rf3) {
-                // (x, y), (42, 53), (~0.188, ~0.31) [coords, code_values, in-game values]
-                outputs.leftStickX = 128 + (directions.x * 42);
-                outputs.leftStickY = 128 + (directions.y * 53);
-            }
-            /* For buffered turnaround up-tilt/down-tilt with ModY + Diagonal */
+            outputs.leftStickX = 128 + (directions.x * 25);
+            // MY Horizontal Tilts
             if (inputs.rt1) {
-                outputs.leftStickX = 128 + (directions.x * 69);
-                outputs.leftStickY = 128 + (directions.y * 89);
+                outputs.leftStickX = 128 + (directions.x * 25);
             }
         }
+        // MY + Vertical (even if shield is held) = 53
+        if (directions.vertical) {
+            outputs.leftStickY = 128 + (directions.y * 25);
+            // MY Vertical Tilts
+            if (inputs.rt1) {
+                outputs.leftStickY = 128 + (directions.y * 25);
+            }
+        }
+
+        /* Up B angles */
+        if (directions.diagonal && !shield_button_pressed) {
+            // MY + q1/2/3/4 = 35 59
+            outputs.leftStickX = 128 + (directions.x * 25);
+            outputs.leftStickY = 128 + (directions.y * 25);
+            if (directions.x == -1) {
+                outputs.leftStickX = 128 + (directions.x * 25);
+                outputs.leftStickY = 128 + (directions.y * 25);
+            }
+        }
+    }
+
+    if (inputs.rf7) 
+    {
+        // left bumper is the "mode" switch, it overrides things
+        outputs.leftStickX = 128 + (directions.x * 1);
+        outputs.leftStickY = 128 - 69 + (directions.y * 1);
+        if (inputs.lt2) {
+            // tilt plus mode gives only horizontal displacement
+            outputs.leftStickX = 128 + (directions.x * 59);
+            outputs.leftStickY = 128 - 69;
+        }
+    }
+
+    if (inputs.mb2) // Select Input for Remapping (Turn Around Modifier)
+    {
+        outputs.leftStickX = 128 + (directions.x * -37);
+
+    }
+
+
+    // C-stick ASDI Slideoff angle overrides any other C-stick modifiers (such as
+    // angled fsmash).
+    if (directions.cx != 0 && directions.cy != 0) {
+        // 5250 8500 = 42 68
+        outputs.rightStickX = 128 + (directions.cx * 42);
+        outputs.rightStickY = 128 + (directions.cy * 68);
+    }
+
+    if (inputs.lf4) {
+        outputs.triggerLAnalog = 140;
+    }
+
+    if (inputs.rf5) {
+        outputs.triggerRAnalog = 140;
     }
 
     // Shut off C-stick when using D-Pad layer.
-    if (inputs.lt1 && inputs.lt2 || inputs.lf5) {
+    if ((inputs.lt1 && inputs.lt2) || inputs.nunchuk_c || inputs.lf5) {
         outputs.rightStickX = 128;
         outputs.rightStickY = 128;
     }
